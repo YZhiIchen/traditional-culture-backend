@@ -16,6 +16,8 @@ from .routers.search import router as search_router
 from .routers.dashboard import router as dashboard_router
 from .routers.explore import router as explore_router
 from .routers.favorite import router as favorite_router
+from .routers.knowledge import router as knowledge_router
+from .routers.chat import router as chat_router
 
 
 @asynccontextmanager
@@ -54,6 +56,8 @@ app.include_router(search_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 app.include_router(explore_router, prefix="/api")
 app.include_router(favorite_router, prefix="/api")
+app.include_router(knowledge_router, prefix="/api")
+app.include_router(chat_router, prefix="/api")
 
 
 @app.get("/api/health")

@@ -11,11 +11,20 @@ from sqlalchemy.orm import Session
 
 from ..config import UPLOAD_DIR, MAX_UPLOAD_SIZE, ALLOWED_IMAGE_TYPES
 from ..database import get_db
-from ..models import User, Resource
+from ..models import Resource
+from ..models.user import User
 from ..schemas.upload import TextUploadRequest
 from ..services import recognition_service
 from ..utils.auth import require_user
 from ..utils.response import success, fail
+
+
+def _register_if_new(r, db):
+    """如果AI识别出新的朝代/作者，自动注册到知识库"""
+    if r.get("dynasty") and r["dynasty"] != "现代":
+        recognition_service.register_dynasty(r["dynasty"], db)
+    if r.get("author") and r["author"] != "佚名":
+        recognition_service.register_author(r["author"], r.get("dynasty"), db)
 
 router = APIRouter(prefix="/upload", tags=["上传"])
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -45,18 +54,32 @@ def upload_image(
     with open(save_path, "wb") as f:
         f.write(content)
 
-    # 调用新版 recognition_service（传入 file_id + recognition_time）
-    ai = recognition_service.recognize_image(
-        str(save_path),
-        file.filename or "unknown",
-        len(content),
-        file_id,
-        _now(),
-    )
+    # 调用AI识别，捕获所有异常
+    try:
+        ai = recognition_service.recognize_image(
+            str(save_path),
+            file.filename or "unknown",
+            len(content),
+            file_id,
+            _now(),
+        )
+    except Exception as e:
+        # 识别失败删除临时图片
+        try:
+            Path(save_path).unlink(missing_ok=True)
+        except:
+            pass
+        err_text = str(e)
+        # 非文物：前端只展示指定短句
+        if err_text == "非文物":
+            return fail(500, "AI图像识别失败\n非文物")
+        else:
+            return fail(500, f"AI图像识别失败：{err_text}")
 
-    # ai 返回结构: {id, fileName, fileType, fileUrl, fileSize, recognitionTime, rawData, result}
+    # 正常文物，入库
     r = ai.get("result", {})
-
+    # 自动注册新朝代/作者到知识库
+    _register_if_new(r, db)
     resource = Resource(
         file_id=file_id,
         owner_id=current_user.id,
@@ -90,15 +113,18 @@ def upload_text(
     file_id = uuid.uuid4().hex[:12]
     file_name = f"{data.title}.txt"
 
-    ai = recognition_service.recognize_text(
-        data.content,
-        file_id,
-        file_name,
-        _now(),
-    )
+    try:
+        ai = recognition_service.recognize_text(
+            data.content,
+            file_id,
+            file_name,
+            _now(),
+        )
+    except Exception as e:
+        return fail(500, f"AI文本识别失败：{str(e)}")
 
     r = ai.get("result", {})
-
+    _register_if_new(r, db)
     resource = Resource(
         file_id=file_id,
         owner_id=current_user.id,
