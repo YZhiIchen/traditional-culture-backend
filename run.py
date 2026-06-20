@@ -1,13 +1,13 @@
 """
 启动入口
-    python run.py
-    或
-    uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 """
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import uvicorn
 from app.config import HOST, PORT
 
 if __name__ == "__main__":
-    print(f"[传统] 传统文化数字化平台后端启动 => http://{HOST}:{PORT}")
-    print(f"[API] API 文档 => http://{HOST}:{PORT}/docs")
+    print(f"=== 传统文化数字化平台后端 ===")
+    print(f"启动 => http://{HOST}:{PORT}")
     uvicorn.run("app.main:app", host=HOST, port=PORT, reload=False)

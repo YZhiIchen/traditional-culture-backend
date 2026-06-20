@@ -210,9 +210,15 @@ description固定填写「图片未识别到文物」，tags使用["普通图片
         choice = resp_data["output"]["choices"][0]
         msg_content = choice.get("message", {}).get("content", "")
 
-        # 兼容list格式content
+        # 兼容list格式content → 直接提取 text 字段
         if isinstance(msg_content, list):
-            content = "".join([str(item) for item in msg_content])
+            texts = []
+            for item in msg_content:
+                if isinstance(item, dict) and "text" in item:
+                    texts.append(item["text"])
+                elif isinstance(item, str):
+                    texts.append(item)
+            content = "\n".join(texts)
         else:
             content = msg_content.strip()
 
