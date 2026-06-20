@@ -1,6 +1,7 @@
 """
 上传路由：图片上传 / 文本上传（适配新版 recognition_service）
 """
+import json
 import uuid
 from datetime import datetime
 from typing import Annotated
@@ -70,11 +71,9 @@ def upload_image(
         except:
             pass
         err_text = str(e)
-        # 非文物：前端只展示指定短句
         if err_text == "非文物":
             return fail(500, "AI图像识别失败\n非文物")
-        else:
-            return fail(500, f"AI图像识别失败：{err_text}")
+        return fail(500, f"AI图像识别失败：{err_text}")
 
     # 正常文物，入库
     r = ai.get("result", {})
@@ -96,7 +95,7 @@ def upload_image(
         tags=",".join(r.get("tags", [])) if r.get("tags") else "",
         content=r.get("content"),
         confidence=r.get("confidence"),
-        raw_data=str(ai),
+        raw_data=json.dumps(ai, ensure_ascii=False),
     )
     db.add(resource)
     db.commit()
@@ -121,7 +120,10 @@ def upload_text(
             _now(),
         )
     except Exception as e:
-        return fail(500, f"AI文本识别失败：{str(e)}")
+        err_text = str(e)
+        if err_text == "非传统文化":
+            return fail(500, "AI文本识别失败\n非传统文化")
+        return fail(500, f"AI文本识别失败：{err_text}")
 
     r = ai.get("result", {})
     _register_if_new(r, db)
@@ -140,7 +142,7 @@ def upload_text(
         tags=",".join(r.get("tags", [])) if r.get("tags") else "",
         content=r.get("content") or data.content,
         confidence=r.get("confidence"),
-        raw_data=str(ai),
+        raw_data=json.dumps(ai, ensure_ascii=False),
     )
     db.add(resource)
     db.commit()

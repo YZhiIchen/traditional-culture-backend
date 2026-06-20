@@ -236,8 +236,8 @@ description固定填写「图片未识别到文物」，tags使用["普通图片
                 ai_result["confidence"] = float(ai_result.get("confidence"))
                 ai_result["content"] = None
 
-                # 识别到非文物，主动抛出极简异常
-                if ai_result.get("description") == "图片未识别到文物":
+                # 检测非文物标签，拒绝入库
+                if "非文物" in (ai_result.get("tags") or []):
                     raise Exception("非文物")
 
                 result["result"] = ai_result
@@ -271,13 +271,15 @@ def recognize_text(content: str, file_id: str, file_name: str, recognition_time:
 
     prompt = f"""
 只输出纯净JSON，禁止外层{{"text":}}、禁止```代码块，无多余文字。
+若文本不属于诗词歌赋、古文典籍、经史子集、戏曲小说、传统技艺、民俗礼仪、中医中药、书画篆刻、传统建筑、传统服饰、神话传说等传统文化相关内容：
+description固定填写「文本未识别到传统文化内容」，tags使用["普通文本","非传统文化"]，dynasty填现代。
 文本内容：{content[:500]}
 输出格式：
 {{
     "title": "文本标题（不超30字）",
     "author": "作者无则填佚名",
     "dynasty": "朝代",
-    "description": "文本分析描述",
+    "description": "文本分析描述，非传统文化固定填：文本未识别到传统文化内容",
     "tags": ["标签1","标签2","标签3","标签4","标签5"],
     "content": "{content[:1000]}",
     "confidence": 0.95
@@ -320,6 +322,11 @@ def recognize_text(content: str, file_id: str, file_name: str, recognition_time:
                         raise Exception(f"千问返回JSON缺失字段: {field}")
                 ai_result["confidence"] = float(ai_result["confidence"])
                 ai_result["content"] = ai_result.get("content", content)
+
+                # 检测非传统文化标签，拒绝入库
+                if "非传统文化" in (ai_result.get("tags") or []):
+                    raise Exception("非传统文化")
+
                 result["result"] = ai_result
                 return result
             except json.JSONDecodeError as e:

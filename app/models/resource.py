@@ -1,10 +1,40 @@
 """
 资源/识别结果模型
 """
+import json
+import ast
 from datetime import datetime
 from sqlalchemy import String, Integer, Float, Text, DateTime, ForeignKey, JSON, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..database import Base
+
+
+def _parse_raw_data(raw):
+    """将 raw_data 字段还原为字典，兼容历史 str(ai) 存储与新 JSON 存储"""
+    if not raw:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    try:
+        return json.loads(raw)
+    except Exception:
+        try:
+            return ast.literal_eval(raw)
+        except Exception:
+            return None
+
+
+def _extract_raw_data(raw):
+    """提取原始文件数据 {content: ...}。
+
+    raw_data 存储的是整个识别结果 ai 字典，其中 ai['rawData'] = {'content': 原始文本}。
+    前端期望 rawData 直接为 {'content': ...}，故从 ai 中取出该子键。
+    兼容历史数据与缺失情况。
+    """
+    parsed = _parse_raw_data(raw)
+    if isinstance(parsed, dict) and isinstance(parsed.get("rawData"), dict):
+        return parsed["rawData"]
+    return parsed
 
 
 class Resource(Base):
@@ -59,5 +89,5 @@ class Resource(Base):
                 "content": self.content,
                 "confidence": self.confidence,
             },
-            "rawData": self.raw_data,
+            "rawData": _extract_raw_data(self.raw_data),
         }
