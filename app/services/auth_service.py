@@ -17,12 +17,13 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
-def authenticate(db: Session, username: str, password: str) -> User | None:
-    """验证用户名密码"""
+def authenticate(db: Session, username: str, password: str):
+    """验证用户名密码，返回 (user, deleted) 元组。
+    deleted=True 表示账号已注销但仍在 30 天保留期内。"""
     user = db.query(User).filter(User.username == username).first()
     if not user or not verify_password(password, user.password_hash):
-        return None
-    return user
+        return None, False
+    return user, user.deleted_at is not None
 
 
 def register_user(db: Session, data: RegisterRequest) -> dict:
@@ -62,6 +63,18 @@ def update_profile(db: Session, user: User, data: UpdateProfileRequest) -> dict:
     db.commit()
     db.refresh(user)
     return user.to_dict()
+
+
+def reactivate_user(db: Session, user: User) -> dict:
+    """恢复已注销账号：清空注销标记，还原完整信息"""
+    user.deleted_at = None
+    db.commit()
+    db.refresh(user)
+    token = create_access_token(user.id)
+    return {
+        "token": token,
+        "userInfo": user.to_dict(),
+    }
 
 
 def change_password(db: Session, user: User, data: ChangePasswordRequest) -> None:

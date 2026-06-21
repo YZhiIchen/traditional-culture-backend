@@ -22,8 +22,21 @@ def get_db():
         db.close()
 
 
+def _migrate_columns():
+    """轻量列迁移：为已存在的表补全新增列（SQLite 不支持 IF NOT EXISTS 加列）"""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        # 检查 users 表是否缺少 avatar 列
+        cols = [row[1] for row in conn.execute(text("PRAGMA table_info(users)")).fetchall()]
+        if 'avatar' not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN avatar VARCHAR(500)"))
+            conn.commit()
+            print('[Migrate] users.avatar 列已添加')
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _migrate_columns()
     _seed_data()
 
 

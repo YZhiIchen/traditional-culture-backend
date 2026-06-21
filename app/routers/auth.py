@@ -18,9 +18,14 @@ router = APIRouter(prefix="/auth", tags=["认证"])
 @router.post("/login")
 def login(data: LoginRequest, db: Annotated[Session, Depends(get_db)]):
     """用户登录"""
-    user = auth_service.authenticate(db, data.username, data.password)
+    user, deleted = auth_service.authenticate(db, data.username, data.password)
     if not user:
         return fail(401, "用户名或密码错误")
+    if deleted:
+        return success({
+            "deleted": True,
+            "username": user.username,
+        }, "该账号已注销，是否恢复？")
     token = create_access_token(user.id)
     return success({
         "token": token,
@@ -61,7 +66,13 @@ def update_profile(
     current_user: Annotated[User, Depends(require_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    """更新个人信息"""
+    """更新个人信息（需审核，当前直接通过）"""
+    from ..services.review_service import review_profile
+
+    review_result = review_profile(current_user.id, data.nickname, data.email or "", data.bio or "")
+    if not review_result["approved"]:
+        return fail(400, f"资料审核未通过：{review_result['reason']}")
+
     result = auth_service.update_profile(db, current_user, data)
     return success(result, "更新成功")
 
@@ -73,10 +84,37 @@ def delete_account(
 ):
     """注销账号（软删除，保留30天）"""
     from datetime import datetime
+    from pathlib import Path as P
+    from ..config import UPLOAD_DIR
+
+    # 删除用户头像物理文件
+    if current_user.avatar:
+        try:
+            fp = UPLOAD_DIR / "headportrait" / P(current_user.avatar).name
+            if fp.exists():
+                fp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        current_user.avatar = None
+
     current_user.deleted_at = datetime.now()
-    current_user.nickname = "已注销用户"
     db.commit()
     return success(None, "账号已注销，数据将保留30天后清除")
+
+
+@user_router.post("/reactivate")
+def reactivate_account(
+    data: LoginRequest,
+    db: Annotated[Session, Depends(get_db)],
+):
+    """恢复已注销账号"""
+    user, deleted = auth_service.authenticate(db, data.username, data.password)
+    if not user:
+        return fail(401, "用户名或密码错误")
+    if not deleted:
+        return fail(400, "该账号未注销，无需恢复")
+    result = auth_service.reactivate_user(db, user)
+    return success(result, "账号已恢复")
 
 
 @user_router.put("/password")
@@ -99,23 +137,34 @@ def upload_avatar(
     current_user: Annotated[User, Depends(require_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    """上传头像"""
-    import uuid
+    """上传头像（需审核，当前直接通过）"""
     from pathlib import Path as P
     from ..config import UPLOAD_DIR
+    from ..services.review_service import review_avatar
 
-    avatar_dir = UPLOAD_DIR / "avatars"
+    avatar_dir = UPLOAD_DIR / "headportrait"
     avatar_dir.mkdir(parents=True, exist_ok=True)
 
-    ext = P(file.filename).suffix if file.filename else ".jpg"
+    ext = P(file.filename).suffix if file.filename else ".png"
     save_name = f"avatar_{current_user.id}{ext}"
     save_path = avatar_dir / save_name
 
     content = file.file.read()
+    if not content or len(content) < 100:
+        return fail(400, "头像文件为空或损坏")
+
     with open(save_path, "wb") as f:
         f.write(content)
 
-    current_user.avatar = f"/uploads/avatars/{save_name}"
+    avatar_url = f"/uploads/headportrait/{save_name}"
+
+    # 审核机制（当前模拟直接通过，预留接口）
+    review_result = review_avatar(current_user.id, avatar_url, content)
+    if not review_result["approved"]:
+        P(save_path).unlink(missing_ok=True)
+        return fail(400, f"头像审核未通过：{review_result['reason']}")
+
+    current_user.avatar = avatar_url
     db.commit()
     return success({"avatar": current_user.avatar}, "头像已更新")
 

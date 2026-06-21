@@ -18,6 +18,8 @@ class User(Base):
     bio: Mapped[str | None] = mapped_column(String(500), default=None)
     role: Mapped[str] = mapped_column(String(20), default="user")  # user / researcher / admin
 
+    avatar: Mapped[str | None] = mapped_column(String(500), default=None)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
@@ -26,8 +28,6 @@ class User(Base):
     resources = relationship("Resource", back_populates="owner")
 
     def to_dict(self):
-        if self.deleted_at:
-            return {"id": self.id, "username": "[已注销]", "nickname": "已注销用户"}
         return {
             "id": self.id,
             "username": self.username,
@@ -35,4 +35,6 @@ class User(Base):
             "email": self.email,
             "bio": self.bio,
             "role": self.role,
+            "avatar": self.avatar,
+            "deleted": self.deleted_at is not None,
         }

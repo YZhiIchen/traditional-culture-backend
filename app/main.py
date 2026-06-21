@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import UPLOAD_DIR
 from .database import init_db
+from .services.scheduler_service import start_scheduler, shutdown_scheduler
 from .routers.auth import router as auth_router, user_router
 from .routers.upload import router as upload_router
 from .routers.recognition import router as recognition_router
@@ -22,9 +23,11 @@ from .routers.chat import router as chat_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期：启动时初始化数据库"""
+    """应用生命周期：启动时初始化数据库 + 后台调度器"""
     init_db()
+    start_scheduler()
     yield
+    shutdown_scheduler()
 
 
 app = FastAPI(
