@@ -2,7 +2,7 @@
 认证路由：登录 / 注册 / 用户信息 / 修改密码
 """
 from typing import Annotated
-from fastapi import APIRouter, Depends, UploadFile, File, Header
+from fastapi import APIRouter, Depends, UploadFile, File, Header, Request
 from sqlalchemy.orm import Session
 
 from slowapi import Limiter
@@ -26,9 +26,9 @@ limiter = Limiter(key_func=get_remote_address)
 @router.post("/login")
 @limiter.limit(RATE_LIMIT_LOGIN)
 def login(
+    request: Request,
     data: LoginRequest,
     db: Annotated[Session, Depends(get_db)],
-    request = None,  # slowapi 需要 request 参数
 ):
     """用户登录（限流: {RATE_LIMIT_LOGIN}）"""
     user, deleted = auth_service.authenticate(db, data.username, data.password)
@@ -51,9 +51,9 @@ def login(
 @router.post("/register")
 @limiter.limit(RATE_LIMIT_REGISTER)
 def register(
+    request: Request,
     data: RegisterRequest,
     db: Annotated[Session, Depends(get_db)],
-    request = None,  # slowapi 需要 request 参数
 ):
     """用户注册（限流: {RATE_LIMIT_REGISTER}）"""
     # 清洗用户输入，防 XSS

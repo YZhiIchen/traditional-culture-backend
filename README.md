@@ -40,6 +40,7 @@
 
 ```text
 app/
+├── middleware/  # 安全中间件（安全响应头 / 输入清洗 / 启动校验）
 ├── models/      # ORM 模型（user / resource / favorite / dynasty / author）
 ├── routers/     # 路由层（接口入口）
 ├── schemas/     # Pydantic 入参 / 出参模型
@@ -56,11 +57,12 @@ app/
 
 | 变量 | 说明 | 默认值 |
 | --- | --- | --- |
-| `SECRET_KEY` | JWT 签名密钥（生产环境务必修改） | — |
+| `SECRET_KEY` | JWT 签名密钥（生产环境务必修改，至少 16 字符） | — |
 | `DATABASE_URL` | 数据库连接字符串 | `sqlite:///./data.db` |
 | `HOST` | 服务监听地址 | `0.0.0.0` |
 | `PORT` | 服务监听端口 | `8080` |
 | `DASHSCOPE_API_KEY` | 阿里通义千问 API 密钥 | — |
+| `CORS_ORIGINS` | 允许的跨域来源（逗号分隔，生产环境必填） | `*` |
 
 ## 快速开始
 
@@ -115,7 +117,30 @@ python run.py
 - 上传文件存放于项目根目录 `uploads/`，通过 `/uploads/<文件名>` 访问
 - 数据库备份存放于 `backups/`
 
+## 安全加固
+
+本项目已接入以下安全机制：
+
+- **安全响应头中间件**（`middleware/security.py`）：自动添加 XSS 防护、`X-Frame-Options`、`Content-Security-Policy` 等响应头
+- **输入清洗**：登录/注册/资料更新接口对用户输入进行 HTML 转义与长度限制，防 XSS
+- **速率限制**（slowapi）：登录/注册接口独立限流，全局默认限流
+- **Refresh Token 机制**：登录返回 `refreshToken`，可通过 `POST /api/auth/refresh` 刷新 access_token
+- **文件魔数校验**：上传接口校验文件真实类型（魔数），防止伪造扩展名攻击
+- **启动安全校验**：应用启动时检查 `SECRET_KEY` / `DASHSCOPE_API_KEY` / `CORS_ORIGINS` 配置
+
+## 部署提示
+
+生产部署时请务必在 `.env` 中配置：
+
+```ini
+# 限制为前端域名（必填！）
+CORS_ORIGINS=https://your-frontend-domain.com
+
+# JWT 密钥至少 16 字符（必填！）
+SECRET_KEY=openssl-rand-hex-32-or-later
+```
+
 ## 相关说明
 
 - 识别服务仅依赖千问 API，无本地降级模拟；API Key 未配置或失败将直接抛出异常
-- CORS 默认允许所有来源（生产环境请按需收紧）
+- CORS 来源由 `CORS_ORIGINS` 配置控制，生产环境务必收紧为前端域名
