@@ -2,22 +2,35 @@
 认证路由：登录 / 注册 / 用户信息 / 修改密码
 """
 from typing import Annotated
-from fastapi import APIRouter, Depends, UploadFile, File
+from fastapi import APIRouter, Depends, UploadFile, File, Header
 from sqlalchemy.orm import Session
 
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+from ..config import RATE_LIMIT_LOGIN, RATE_LIMIT_REGISTER
 from ..database import get_db
 from ..models import User
 from ..schemas.auth import LoginRequest, RegisterRequest, UpdateProfileRequest, ChangePasswordRequest
 from ..services import auth_service
-from ..utils.auth import create_access_token, require_user
+from ..utils.auth import create_access_token, create_refresh_token, refresh_access_token, require_user
 from ..utils.response import success, fail
+from ..middleware.security import sanitize_html, sanitize_user_input
 
 router = APIRouter(prefix="/auth", tags=["认证"])
 
+# 登录/注册接口独立限流
+limiter = Limiter(key_func=get_remote_address)
+
 
 @router.post("/login")
-def login(data: LoginRequest, db: Annotated[Session, Depends(get_db)]):
-    """用户登录"""
+@limiter.limit(RATE_LIMIT_LOGIN)
+def login(
+    data: LoginRequest,
+    db: Annotated[Session, Depends(get_db)],
+    request = None,  # slowapi 需要 request 参数
+):
+    """用户登录（限流: {RATE_LIMIT_LOGIN}）"""
     user, deleted = auth_service.authenticate(db, data.username, data.password)
     if not user:
         return fail(401, "用户名或密码错误")
@@ -26,21 +39,43 @@ def login(data: LoginRequest, db: Annotated[Session, Depends(get_db)]):
             "deleted": True,
             "username": user.username,
         }, "该账号已注销，是否恢复？")
-    token = create_access_token(user.id)
+    access_token = create_access_token(user.id)
+    refresh_token = create_refresh_token(user.id)
     return success({
-        "token": token,
+        "token": access_token,
+        "refreshToken": refresh_token,
         "userInfo": user.to_dict(),
     })
 
 
 @router.post("/register")
-def register(data: RegisterRequest, db: Annotated[Session, Depends(get_db)]):
-    """用户注册"""
+@limiter.limit(RATE_LIMIT_REGISTER)
+def register(
+    data: RegisterRequest,
+    db: Annotated[Session, Depends(get_db)],
+    request = None,  # slowapi 需要 request 参数
+):
+    """用户注册（限流: {RATE_LIMIT_REGISTER}）"""
+    # 清洗用户输入，防 XSS
+    data.nickname = sanitize_html(data.nickname, max_length=20)
     try:
-        result = auth_service.register_user(db, data)
+        result, user = auth_service.register_user(db, data)
+        # 注册成功也附带 refresh_token
+        result["refreshToken"] = create_refresh_token(user.id)
         return success(result, "注册成功")
     except ValueError as e:
         return fail(400, str(e))
+
+
+@router.post("/refresh")
+def refresh_token(refresh: str = Header(alias="X-Refresh-Token")):
+    """用 refresh_token 换取新的 access_token"""
+    if not refresh:
+        return fail(401, "缺少 refresh_token")
+    new_token = refresh_access_token(refresh)
+    if not new_token:
+        return fail(401, "refresh_token 无效或已过期，请重新登录")
+    return success({"token": new_token})
 
 
 @router.post("/logout")
@@ -66,10 +101,18 @@ def update_profile(
     current_user: Annotated[User, Depends(require_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    """更新个人信息（需审核，当前直接通过）"""
+    """更新个人信息（已清洗输入，通过审核）"""
+    # 清洗用户输入，防 XSS
+    if data.nickname is not None:
+        data.nickname = sanitize_html(data.nickname, max_length=20)
+    if data.bio is not None:
+        data.bio = sanitize_html(data.bio, max_length=500)
+    if data.email is not None:
+        data.email = sanitize_html(data.email, max_length=100)
+
     from ..services.review_service import review_profile
 
-    review_result = review_profile(current_user.id, data.nickname, data.email or "", data.bio or "")
+    review_result = review_profile(current_user.id, data.nickname or "", data.email or "", data.bio or "")
     if not review_result["approved"]:
         return fail(400, f"资料审核未通过：{review_result['reason']}")
 

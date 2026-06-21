@@ -26,8 +26,8 @@ def authenticate(db: Session, username: str, password: str):
     return user, user.deleted_at is not None
 
 
-def register_user(db: Session, data: RegisterRequest) -> dict:
-    """注册新用户"""
+def register_user(db: Session, data: RegisterRequest) -> tuple[dict, User]:
+    """注册新用户，返回 (result_dict, user_object)"""
     # 检查用户名唯一
     existing = db.query(User).filter(User.username == data.username).first()
     if existing:
@@ -46,7 +46,7 @@ def register_user(db: Session, data: RegisterRequest) -> dict:
     return {
         "token": token,
         "userInfo": user.to_dict(),
-    }
+    }, user
 
 
 def get_profile(user: User) -> dict:

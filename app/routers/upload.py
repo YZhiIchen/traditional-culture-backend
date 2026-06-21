@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, Depends
 from sqlalchemy.orm import Session
 
-from ..config import UPLOAD_DIR, MAX_UPLOAD_SIZE, ALLOWED_IMAGE_TYPES
+from ..config import UPLOAD_DIR, MAX_UPLOAD_SIZE, MAX_TEXT_SIZE, ALLOWED_IMAGE_TYPES, FILE_MAGIC
 from ..database import get_db
 from ..models import Resource
 from ..models.user import User
@@ -47,6 +47,17 @@ def upload_image(
     content = file.file.read()
     if len(content) > MAX_UPLOAD_SIZE:
         return fail(400, "文件不超过 10MB")
+
+    # 魔数校验：验证文件头与声称的 content_type 一致
+    content_type = file.content_type
+    expected_magic = FILE_MAGIC.get(content_type)
+    if expected_magic and not content.startswith(expected_magic):
+        # WebP 特殊处理：开头是 RIFF + 4字节长度 + WEBP
+        if content_type == "image/webp":
+            if len(content) < 12 or content[8:12] != b"WEBP":
+                return fail(400, "文件内容与类型不匹配（魔数校验失败）")
+        else:
+            return fail(400, "文件内容与类型不匹配（魔数校验失败）")
 
     file_id = uuid.uuid4().hex[:12]
     ext = Path(file.filename).suffix if file.filename else ".jpg"
@@ -109,6 +120,11 @@ def upload_text(
     current_user: Annotated[User, Depends(require_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
+    # 校验文本大小
+    text_bytes = data.content.encode("utf-8")
+    if len(text_bytes) > MAX_TEXT_SIZE:
+        return fail(400, f"文本内容超过限制（最大 {MAX_TEXT_SIZE // 1024}KB）")
+
     file_id = uuid.uuid4().hex[:12]
     file_name = f"{data.title}.txt"
 
