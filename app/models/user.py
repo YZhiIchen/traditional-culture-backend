@@ -2,7 +2,7 @@
 用户模型
 """
 from datetime import datetime
-from sqlalchemy import String, DateTime, func
+from sqlalchemy import String, DateTime, Integer, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..database import Base
 
@@ -19,6 +19,9 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20), default="user")  # user / researcher / admin
 
     avatar: Mapped[str | None] = mapped_column(String(500), default=None)
+
+    # 单点登录：token 版本号，每次登录/登出递增，旧 token 自动失效
+    token_version: Mapped[int] = mapped_column(Integer, default=0)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

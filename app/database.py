@@ -33,6 +33,12 @@ def _migrate_columns():
             conn.commit()
             print('[Migrate] users.avatar 列已添加')
 
+        # 单点登录：添加 token_version 列
+        if 'token_version' not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0"))
+            conn.commit()
+            print('[Migrate] users.token_version 列已添加')
+
 
 def init_db():
     Base.metadata.create_all(bind=engine)

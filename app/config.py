@@ -34,7 +34,7 @@ FILE_MAGIC: dict[str, bytes] = {
 
 # ── 服务 ──
 HOST = os.getenv("HOST", "0.0.0.0")
-PORT = int(os.getenv("PORT", "8080"))
+PORT = int(os.getenv("PORT", "9527"))
 
 # ── CORS 安全配置 ──
 # 生产环境请设置为前端域名列表，用逗号分隔

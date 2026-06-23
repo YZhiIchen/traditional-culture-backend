@@ -21,20 +21,16 @@ def get_recommend(
     dynasty: str | None = Query(default=None),
     category: str | None = Query(default=None),
 ):
-    """获取当前用户的精选推荐"""
+    """获取全局精选推荐（展示全系统高质量识别结果）"""
     query = db.query(Resource).filter(
         Resource.status == "completed",
         Resource.confidence.isnot(None),
-        Resource.owner_id == current_user.id,
     )
 
     if dynasty:
         query = query.filter(Resource.dynasty == dynasty)
 
     items = query.order_by(Resource.confidence.desc()).limit(12).all()
-
-    if len(items) < 6:
-        items = db.query(Resource).filter(Resource.status == "completed").limit(12).all()
 
     return success([
         {

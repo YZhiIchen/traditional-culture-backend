@@ -39,8 +39,13 @@ def login(
             "deleted": True,
             "username": user.username,
         }, "该账号已注销，是否恢复？")
-    access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
+    # ── 单点登录核心：递增 token_version，使旧会话全部失效 ──
+    user.token_version += 1
+    db.commit()
+    db.refresh(user)
+
+    access_token = create_access_token(user.id, user.token_version)
+    refresh_token = create_refresh_token(user.id, user.token_version)
     return success({
         "token": access_token,
         "refreshToken": refresh_token,
@@ -61,26 +66,34 @@ def register(
     try:
         result, user = auth_service.register_user(db, data)
         # 注册成功也附带 refresh_token
-        result["refreshToken"] = create_refresh_token(user.id)
+        result["refreshToken"] = create_refresh_token(user.id, user.token_version)
         return success(result, "注册成功")
     except ValueError as e:
         return fail(400, str(e))
 
 
 @router.post("/refresh")
-def refresh_token(refresh: str = Header(alias="X-Refresh-Token")):
+def refresh_token(
+    refresh: str = Header(alias="X-Refresh-Token"),
+    db: Annotated[Session, Depends(get_db)] = None,
+):
     """用 refresh_token 换取新的 access_token"""
     if not refresh:
         return fail(401, "缺少 refresh_token")
-    new_token = refresh_access_token(refresh)
+    new_token = refresh_access_token(refresh, db)
     if not new_token:
         return fail(401, "refresh_token 无效或已过期，请重新登录")
     return success({"token": new_token})
 
 
 @router.post("/logout")
-def logout():
-    """退出登录（JWT 无状态，前端清 token 即可）"""
+def logout(
+    current_user: Annotated[User, Depends(require_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """退出登录：递增 token_version 使当前会话失效（单点登录）"""
+    current_user.token_version += 1
+    db.commit()
     return success(None, "已退出")
 
 
@@ -141,6 +154,8 @@ def delete_account(
         current_user.avatar = None
 
     current_user.deleted_at = datetime.now()
+    # 注销账号同时递增 token_version，使当前会话立即失效
+    current_user.token_version += 1
     db.commit()
     return success(None, "账号已注销，数据将保留30天后清除")
 

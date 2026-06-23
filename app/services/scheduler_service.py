@@ -6,6 +6,7 @@
 1. 每日 02:00 — 清算注销超 30 天的用户及其数据（物理删除）
 2. 每小时    — processing 状态超 1 小时的资源自动转为 failed
 3. 每日 03:00 — SQLite 数据库文件备份（保留近 7 份）
+4. 每 5 分钟  — 刷新 Home 页面全局统计缓存（性能优化）
 """
 import shutil
 from datetime import datetime, timedelta
@@ -129,6 +130,15 @@ def backup_database() -> str | None:
         return None
 
 
+def refresh_dashboard_cache() -> None:
+    """刷新 Home 页面全局统计缓存（由调度器每 5 分钟调用）"""
+    try:
+        from ..routers.dashboard import refresh_global_stats_cache
+        refresh_global_stats_cache()
+    except Exception as e:
+        print(f"[Scheduler] 刷新仪表盘缓存失败: {e}")
+
+
 def start_scheduler() -> BackgroundScheduler:
     """启动后台调度器"""
     global _scheduler
@@ -158,6 +168,20 @@ def start_scheduler() -> BackgroundScheduler:
         backup_database,
         trigger=CronTrigger(hour=3, minute=0),
         id="backup_database",
+        replace_existing=True,
+    )
+
+    # 4. 每 5 分钟刷新 Home 页面全局统计缓存
+    _scheduler.add_job(
+        refresh_dashboard_cache,
+        trigger=IntervalTrigger(minutes=5),
+        id="refresh_dashboard_cache",
+        replace_existing=True,
+    )
+    # 启动时立即刷新一次，避免首次请求冷启动
+    _scheduler.add_job(
+        refresh_dashboard_cache,
+        id="refresh_dashboard_cache_init",
         replace_existing=True,
     )
 

@@ -42,7 +42,7 @@ def register_user(db: Session, data: RegisterRequest) -> tuple[dict, User]:
     db.commit()
     db.refresh(user)
 
-    token = create_access_token(user.id)
+    token = create_access_token(user.id, user.token_version)
     return {
         "token": token,
         "userInfo": user.to_dict(),
@@ -68,9 +68,11 @@ def update_profile(db: Session, user: User, data: UpdateProfileRequest) -> dict:
 def reactivate_user(db: Session, user: User) -> dict:
     """恢复已注销账号：清空注销标记，还原完整信息"""
     user.deleted_at = None
+    # 递增 token_version，使旧会话失效
+    user.token_version += 1
     db.commit()
     db.refresh(user)
-    token = create_access_token(user.id)
+    token = create_access_token(user.id, user.token_version)
     return {
         "token": token,
         "userInfo": user.to_dict(),
@@ -81,4 +83,6 @@ def change_password(db: Session, user: User, data: ChangePasswordRequest) -> Non
     if not verify_password(data.current, user.password_hash):
         raise ValueError("当前密码不正确")
     user.password_hash = hash_password(data.newPwd)
+    # 修改密码后递增 token_version，使所有旧会话失效
+    user.token_version += 1
     db.commit()
